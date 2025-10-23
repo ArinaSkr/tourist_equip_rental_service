@@ -3,6 +3,7 @@ import getpass
 from gameparts.parts import User, Users, EquipmentItem, EquipmentCatalog, RentalService
 from gameparts.exceptions import WrongPasswordError, UserNotFoundError, LoginExistsError
 
+
 def get_password_input(prompt='Введите пароль: '):
     # Функция для скрытия ввода пароля
     return getpass.getpass(prompt)
@@ -51,14 +52,13 @@ def main():
                     try:
                         user = users.add_user(user_full_name, user_tel, user_login, user_password)
                         actual_user = user
-                        print('Регистрация прошла успешно!')
                         break
                     except LoginExistsError as e:
                         print(f"Ошибка: {e}")
 
     while running:
         print('-' * 10)
-        print('Выберите действие - введите номер действия:')
+        print('Выберите действие - введите номер:')
         try:
             menu = int(input(
             '1. Посмотреть каталог туристического снаряжения\n' 
@@ -107,7 +107,7 @@ def main():
                         except Exception as e:
                             print(f"Ошибка: {e}")
                     elif what_change.lower() == 'логин':
-                        password = get_password_input('Введите пароль для подтверждения: ')
+                        old_password = get_password_input('Введите пароль для подтверждения: ')
                         new_login = input('Введите новый логин: ')
                         if users.find_user(new_login):
                             print('Этот логин уже занят')
@@ -141,51 +141,63 @@ def main():
                     deposit = 0
                 description_input = input('Введите описание(необязательно): ')
                 description = description_input if description_input != '' else 'описание отсутствует'
-                new_item = EquipmentItem(name, price, deposit, description)
+                new_item = EquipmentItem(name, price, deposit, description, owner=actual_user)
                 catalog.add_equip_item(new_item)
-                actual_user.add_offer(new_item)
+                actual_user.add_user_offers(new_item)
                 print('Ваше предложение добавлено!')
 
             case 4:
-                user_bookings = rental_service.get_user_bookings(actual_user)
+                user_bookings = rental_service.get_user_bookings(actual_user, catalog)
                 if user_bookings:
                     print('Забронированное снаряжение:')
-                    for item in user_bookings:
-                        print(f'- {item.name}: {item.price_per_day} руб/день')
-                    calc_choice = input('\nХотите посчитать общую стоимость?(да/нет): ')
+                    for i, item in enumerate(user_bookings, 1):
+                        print(f'{i}. {item.name}: {item.price_per_day} руб/день')
+                    
+                    calc_choice = input('\nХотите посчитать общую стоимость? (да/нет): ')
                     if calc_choice.lower() in 'да':
                         try:
                             days = int(input('Введите количество дней для расчета стоимости: '))
-                            total_price = rental_service.full_rent_price(days, actual_user)
+                            total_price = rental_service.full_rent_price(days, actual_user, catalog)
                             print(f'Общая стоимость: {total_price} руб')
                         except ValueError:
                             print('Количество дней должно быть числом')
-                    change_choice = input('Хотите изменить список? (да/нет): ')
+                    
+                    change_choice = input('\nХотите изменить список? (да/нет): ')
                     if change_choice.lower() in 'да':
-                        item_name = input('Введите название товара для удаления: ')
-                        if item_name.strip() != '':
-                            if rental_service.remove_booking(item_name, actual_user):
-                                print('Товар удален из бронирований')
+                        try:
+                            item_number = int(input('Введите номер товара для удаления (или 0 для отмены): '))
+                            if item_number == 0:
+                                continue
+                            elif 1 <= item_number <= len(user_bookings):
+                                item_to_remove = user_bookings[item_number - 1]
+                                if rental_service.remove_booking_by_item(item_to_remove, actual_user):
+                                    print(f'Товар "{item_to_remove.name}" удален из бронирований')
+                                else:
+                                    print('Не удалось удалить товар')
                             else:
-                                print('Товар не найден')
+                                print('Неверный номер товара')
+                        except ValueError:
+                            print('Пожалуйста, введите число')
                 else:
                     print('Нет забронированных товаров')
 
             case 5:
-                user_offers = catalog.find_user_offers(actual_user)
-                if user_offers:
-                    print('Ваши предложения: ')
-                    for item in user_offers:
-                        print(f'- {item.name}: {item.price_per_day} руб/день')
-                    choice_change_item = input('Если хотите отредактировать/удалить объявление о снаряжении, введите его название: ')
-                    if choice_change_item != '':
+                while True:
+                    user_offers = catalog.find_user_offers(actual_user)
+                    if user_offers:
+                        print('Ваши предложения: ')
+                        for item in user_offers:
+                            print(f'- {item.name}: {item.price_per_day} руб/день')
+                        choice_change_item = input('Если хотите отредактировать/удалить объявление о снаряжении, введите его название: ')
+                        if choice_change_item.strip() == '':
+                            break
                         target_item = None
                         for item in user_offers:
                             if item.name.lower() == choice_change_item.lower():
                                 target_item = item
                                 break
                         if target_item:
-                            action_item = input('Что хотите сделать? (удалить/изменить): ')
+                            action_item = input('Что хотите сделать? (удалить/изменить/назад): ')
                             if action_item.lower() == 'удалить':
                                 if catalog.remove_item(target_item):
                                     actual_user.offers.remove(target_item)
@@ -204,10 +216,15 @@ def main():
                                             continue
                                     target_item.change_info_item(what_change, new_value)
                                     print('Изменения сохранены')
+                            elif action_item == 'назад':
+                                continue
+                            else:
+                                print('Неизвестное действие')
                         else:
                             print('Товар не найден среди ваших предложений')
-                else:
-                    print('У вас пока нет объявлений')
+                    else:
+                        print('У вас пока нет объявлений')
+                        break
             case 6:
                 running = False
                 print('До новых встреч!')

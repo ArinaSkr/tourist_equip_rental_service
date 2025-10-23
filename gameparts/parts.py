@@ -1,4 +1,4 @@
-from exceptions import WrongPasswordError, UserNotFoundError, LoginExistsError
+from .exceptions import WrongPasswordError, UserNotFoundError, LoginExistsError
 
 
 class User:
@@ -25,7 +25,9 @@ class User:
     
     def change_info(self, field, new_value, old_password=None):
         # Изменение информации о пользователе.
-        if field.lower() in 'пароль' and old_password:
+        old_login = self.login
+
+        if field.lower() == 'пароль' and old_password:
             if not self.check_password(old_password):
                 raise WrongPasswordError()
             self.password = new_value
@@ -37,10 +39,14 @@ class User:
             self.full_name = new_value
         elif field.lower() == 'телефон':
             self.tel = new_value
-        self._update_user_in_file()
 
-    def _update_user_in_file(self):
+        self._update_user_in_file(old_login)
+
+
+    def _update_user_in_file(self, search_login=None):
         # Обновление информации о пользователе в файле.
+        search_login = search_login or self.login
+
         try:
             with open('users.txt', 'r', encoding='utf-8') as f:
                 lines = f.readlines()
@@ -48,7 +54,7 @@ class User:
             with open('users.txt', 'w', encoding='utf-8') as f:
                 for line in lines:
                     data = line.strip().split('|')
-                    if len(data) >= 4 and data[2] == self.login:
+                    if len(data) >= 4 and data[2] == search_login:
                         f.write(self.to_string() + '\n')
                     else:
                         f.write(line)
@@ -77,7 +83,7 @@ class User:
         # Передача нового пользователя в файл.
         try:
             with open('users.txt', 'a', encoding='utf-8') as f:
-                f.add(self.to_string() + '\n')
+                f.write(self.to_string() + '\n')
         except Exception as e:
             print(f"Ошибка сохранения пользователя: {e}")
 
@@ -104,7 +110,6 @@ class Users:
         new_user = User(full_name, tel, login, password, self.next_id)           
         self.users.append(new_user)
         self.next_id += 1
-        self.save_users()
         new_user.save_user_to_file()
 
     def find_user(self, login):
@@ -121,7 +126,8 @@ class Users:
             raise UserNotFoundError()
 
         if user.check_password(password):
-            return True
+            return user
+        
         raise WrongPasswordError()
     
     def check_duplicate(self, full_name, tel):
@@ -141,7 +147,7 @@ class Users:
                     if user.id >= self.next_id:
                         self.next_id = user.id + 1
         except FileNotFoundError:
-            print('Файл пользователей не найден, создаем новый')
+            pass
         except Exception as e:
             print(f"Ошибка загрузки пользователей: {e}")
 
@@ -149,13 +155,14 @@ class Users:
 class EquipmentItem:
     """Класс для описания конкретного предмета экипировки"""
 
-    def __init__(self, name, price_per_day, deposit=0, product_description=' ', status='available', owner=None):
+    def __init__(self, name, price_per_day, deposit=0, product_description=' ', status='available', owner=None, booked_by=None):
         self.name = name
         self.product_description = product_description
         self.price_per_day = price_per_day
         self.deposit = deposit
         self.status = status
         self.owner = owner
+        self.booked_by = booked_by
 
     def change_info_item(self, field, new_value):
         # Изменение информации о предмете экипировки.
@@ -188,16 +195,22 @@ class EquipmentItem:
     def to_string(self):
         # Преобразование информации об экипировке в запись. 
         owner_login = self.owner.login if self.owner else 'None'
-        return f'{self.name}|{self.product_description}|{self.price_per_day}|{self.deposit}|{self.status}|{owner_login}'
+        booked_by_login = self.booked_by.login if self.booked_by else 'None'
+        return f'{self.name}|{self.product_description}|{self.price_per_day}|{self.deposit}|{self.status}|{owner_login}|{booked_by_login}'
 
     @classmethod
     def from_string(cls, line, users_list):
         # Формирование объекта из строки.
         data = line.strip().split('|')
         owner = None
+        booked_by = None
+        
         if data[5] != "None":
             owner = users_list.find_user(data[5])
-        return cls(data[0], int(data[2]), int(data[3]), data[1], data[4], owner)
+        if len(data) > 6 and data[6] != "None": 
+            booked_by = users_list.find_user(data[6])
+        
+        return cls(data[0], int(data[2]), int(data[3]), data[1], data[4], owner, booked_by)
 
     def save_to_file(self):
         # Запись предмета в файл.
@@ -271,7 +284,7 @@ class EquipmentCatalog:
                     item = EquipmentItem.from_string(line, self.users_list)
                     self.equip_items.append(item)
         except FileNotFoundError:
-            print("Файл оборудования не найден, создаем новый")
+            pass
         except Exception as e:
             print(f"Ошибка загрузки оборудования: {e}")
     
@@ -280,37 +293,39 @@ class RentalService:
     """Класс для управления бронированием"""
 
     def __init__(self, users_list):
-        self.booked_items = []
         self.users_list = users_list
 
     def book_item(self, item, user):
         # Бронирование предмета экипировки.
         if item.status == 'available':
             item.status = 'booked'
-            booking = {'item': item, 'user': user, 'days': 0}
-            self.booked_items.append(booking)
+            item.booked_by = user
             item._update_item_in_file()
 
-    def get_user_bookings(self, user):
+    def get_user_bookings(self, user, catalog):
         # Получение списка забронированных пользователем товаров
-        return [booking for booking in self.booked_items if booking['user'] == user]
+        user_bookings = []
+        for item in catalog.equip_items:
+            if item.booked_by == user and item.status == 'booked':
+                user_bookings.append(item)
+        return user_bookings
     
-    def remove_booking(self, item_name, user):
-        # Удаление предмета экипировки из забронированных.
-        for booking in self.booked_items[:]:
-            if booking['item'].name.lower() == item_name.lower() and booking['user'] == user:
-                booking['item'].status = 'available'
-                self.booked_items.remove(booking)
-                booking['item']._update_item_in_file()
+    def remove_booking_by_item(self, item, user):
+        # Удаление бронирования по объекту предмета
+        if item.booked_by == user and item.status == 'booked':
+            item.status = 'available'
+            item.booked_by = None 
+            item._update_item_in_file()
+            return True  
+        return False
 
-    def full_rent_price(self, days, user=None): 
+    def full_rent_price(self, days, user, catalog): 
         # Расчет полной стоимости аренды забронированной экипировки.
         full_price = 0
-        bookings = self.booked_items if user is None else [b for b in self.booked_items if b['user'] == user]
+        user_bookings = self.get_user_bookings(user, catalog)
         
-        for booking in bookings:
-            booking['days'] = days
-            full_price += self.count_price(booking['item'], days)
+        for item in user_bookings:
+            full_price += self.count_price(item, days)
         return full_price
 
     def count_price(self, item, days):
