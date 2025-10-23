@@ -1,52 +1,61 @@
-#import pygame
 import getpass
 
-from gameparts.parts import User, UserList, EquipmentItem, EquipmentCatalog, RentalService
-#from gameparts.exceptions import ...
+from gameparts.parts import User, Users, EquipmentItem, EquipmentCatalog, RentalService
+from gameparts.exceptions import WrongPasswordError, UserNotFoundError, LoginExistsError
 
-def get_password_input(prompt="Введите пароль: "):
-    """Функция для скрытия ввода пароля"""
+def get_password_input(prompt='Введите пароль: '):
+    # Функция для скрытия ввода пароля
     return getpass.getpass(prompt)
 
 def main():
     running = True
 
-    users = UserList()
-    catalog = EquipmentCatalog()
-    rental_service = RentalService()
+    users = Users()
+    catalog = EquipmentCatalog(users)
+    rental_service = RentalService(users)
 
     print('Добро пожаловать в сервис аренды туристического снаряжения EQUIPlease!')
 
-    choice = input('У вас уже есть аккаунт? (да/нет):')
-    print('-' * 10)
-    match choice:
-        case 'да':
-            login = input('Введите логин: ')
-            password = get_password_input('Введите пароль: ')
-            users.user_aunthentication(login, password)
-        case 'нет':
-            while True:
-                print('Регистрация пользователя')
-                user_full_name = input('Введите ФИО: ')
-                user_tel = input('Введите телефон: ')
-                if users.check_duplicate(user_full_name, user_tel):
-                    choice = input('Пользователь с такими данными уже существует. Хотите войти? (да/нет): ')
-                    if choice.lower() == 'да':
-                        login = input('Введите логин: ')
-                        password = get_password_input('Введите пароль: ')
-                        users.user_aunthentication(login, password)
-                    else:
-                        print('Пожалуйста, используйте другие данные.')
+    actual_user = None
+    while actual_user is None:
+        choice = input('У вас уже есть аккаунт? (да/нет):').lower()
+        print('-' * 10)
+        match choice:
+            case 'да':
+                try:
+                    login = input('Введите логин: ')
+                    password = get_password_input('Введите пароль: ')
+                    user = users.user_authentication(login, password)
+                    actual_user = user
+                except (WrongPasswordError, UserNotFoundError) as e:
+                    print(f"Ошибка: {e}")
+            case 'нет':
+                while actual_user is None:
+                    print('Регистрация пользователя')
+                    user_full_name = input('Введите ФИО: ')
+                    user_tel = input('Введите телефон: ')
+                    if users.check_duplicate(user_full_name, user_tel):
+                        choice = input('Пользователь с такими данными уже существует. Хотите войти? (да/нет): ')
+                        if choice.lower() == 'да':
+                            login = input('Введите логин: ')
+                            password = get_password_input('Введите пароль: ')
+                            users.user_aunthentication(login, password)
+                        else:
+                            print('Пожалуйста, используйте другие данные.')
+                            continue
+                    user_login = input('Придумайте логин: ')
+                    if users.find_user(user_login):
+                        print('Этот логин уже занят. Придумайте другой.')
                         continue
-                user_login = input('Придумайте логин: ')
-                if users.find_user(user_login):
-                    print('Этот логин уже занят. Придумайте другой.')
-                    continue
-                user_password = get_password_input('Введите пароль(не менее 4 символов): ')
-                users.add_user(user_full_name, user_tel, user_login, user_password)
-                print('Регистрация прошла успешно!')
-    
-    actual_user = users.find_user(login)
+                    user_password = get_password_input('Введите пароль(не менее 4 символов): ')
+                    try:
+                        user = users.add_user(user_full_name, user_tel, user_login, user_password)
+                        actual_user = user
+                        print('Регистрация прошла успешно!')
+                        break
+                    except LoginExistsError as e:
+                        print(f"Ошибка: {e}")
+
     while running:
         print('-' * 10)
         print('Выберите действие - введите номер действия:')
@@ -77,8 +86,8 @@ def main():
                             for item in found_item:
                                 print(item)
                                 book_choice = input('Хотите забронировать этот товар? (да/нет):')
-                                if book_choice.lower() == 'да':
-                                    rental_service.book_item(book_item)
+                                if book_choice.lower() in 'да':
+                                    rental_service.book_item(item, actual_user)
                                     print('Успешно забронироавно!')
                                     break
                         else:
@@ -87,30 +96,38 @@ def main():
                     print('Сейчас нет доступного снаряжения, но вы можете первым его добавить')
 
             case 2:
-                print(f'Ваш профиль: {actual_user}')
+                print(f'Ваш профиль: \n{actual_user}')
                 choice_change = input('Хотите изменить информацию? (да/нет): ')
-                if choice_change.lower() == 'да':
+                if choice_change.lower() in 'да':
                     what_change = input('Какую информацию хотите изменить?(ФИО, телефон, логин, пароль): ')
                     if what_change.lower() in ['фио', 'телефон']:
                         new_value = input('Введите новое значение: ')
-                        actual_user.change_info(what_change.lower(), new_value)
+                        try:
+                            actual_user.change_info(what_change, new_value)
+                        except Exception as e:
+                            print(f"Ошибка: {e}")
                     elif what_change.lower() == 'логин':
-                        password = get_password_input('Введите старый пароль: ')
+                        password = get_password_input('Введите пароль для подтверждения: ')
                         new_login = input('Введите новый логин: ')
                         if users.find_user(new_login):
                             print('Этот логин уже занят')
                         else:
-                            actual_user.change_info('логин', new_login, old_password=old_password)
+                            try:
+                                actual_user.change_info('логин', new_login, old_password=old_password)
+                            except WrongPasswordError as e:
+                                print(f"Ошибка: {e}")
                     elif what_change == 'пароль':
-                        old_password = get_password_input('Введите старый пароль: ')
+                        old_password = get_password_input('Введите текущий пароль: ')
                         new_password = get_password_input('Введите новый пароль: ')
-                        actual_user.change_info('пароль', new_password, old_password=old_password)
-            
+                        try:
+                            actual_user.change_info('пароль', new_password, old_password=old_password)
+                        except WrongPasswordError as e:
+                            print(f"Ошибка: {e}")
             case 3:
                 name = input('Введите название снаряжения: ')
                 try:
                     price = int(input('Введите цену, руб/день: '))
-                    if price < 0:
+                    if price <= 0:
                         print('Цена должна быть положительной')
                         continue
                 except ValueError:
@@ -136,7 +153,7 @@ def main():
                     for item in user_bookings:
                         print(f'- {item.name}: {item.price_per_day} руб/день')
                     calc_choice = input('\nХотите посчитать общую стоимость?(да/нет): ')
-                    if calc_choice.lower() == 'да':
+                    if calc_choice.lower() in 'да':
                         try:
                             days = int(input('Введите количество дней для расчета стоимости: '))
                             total_price = rental_service.full_rent_price(days, actual_user)
@@ -144,7 +161,7 @@ def main():
                         except ValueError:
                             print('Количество дней должно быть числом')
                     change_choice = input('Хотите изменить список? (да/нет): ')
-                    if change_choice.lower() == 'да':
+                    if change_choice.lower() in 'да':
                         item_name = input('Введите название товара для удаления: ')
                         if item_name.strip() != '':
                             if rental_service.remove_booking(item_name, actual_user):
@@ -161,21 +178,39 @@ def main():
                     for item in user_offers:
                         print(f'- {item.name}: {item.price_per_day} руб/день')
                     choice_change_item = input('Если хотите отредактировать/удалить объявление о снаряжении, введите его название: ')
-                    if choice_change_item:
-                        action_item = input('Что хотите сделать? (удалить/изменить): ')
-                        if action_item.lower() == 'удалить':
-                            if catalog.remove_item(item):
-                                actual_user.offers.remove(item)
-                            print('Не удалось удалить объявление')
-                        elif action_item.lower() == 'изменить':
-                            what_change = input('Какую информацию хотите изменить?(название, описание, цену, залог): ')
-                            if what_change.lower() in ['название', 'описание', 'цена', 'залог']:
-                                new_value = input('Введите новое значение: ')
-                                item.change_info_item(what_change.lower(), new_value)
+                    if choice_change_item != '':
+                        target_item = None
+                        for item in user_offers:
+                            if item.name.lower() == choice_change_item.lower():
+                                target_item = item
+                                break
+                        if target_item:
+                            action_item = input('Что хотите сделать? (удалить/изменить): ')
+                            if action_item.lower() == 'удалить':
+                                if catalog.remove_item(target_item):
+                                    actual_user.offers.remove(target_item)
+                                    print('Объявление удалено')
+                                else:
+                                    print('Не удалось удалить объявление')
+                            elif action_item.lower() == 'изменить':
+                                what_change = input('Какую информацию хотите изменить?(название, описание, цена, залог): ').lower()
+                                if what_change in ['название', 'описание', 'цена', 'залог']:
+                                    new_value = input('Введите новое значение: ')
+                                    if what_change in ['цена', 'залог']:
+                                        try:
+                                            new_value = int(new_value)
+                                        except ValueError:
+                                            print('Значение должно быть числом')
+                                            continue
+                                    target_item.change_info_item(what_change, new_value)
+                                    print('Изменения сохранены')
+                        else:
+                            print('Товар не найден среди ваших предложений')
                 else:
                     print('У вас пока нет объявлений')
             case 6:
                 running = False
+                print('До новых встреч!')
             case _:
                 print('Введена неверная команда')
 
