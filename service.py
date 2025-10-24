@@ -6,7 +6,7 @@ from gameparts.exceptions import WrongPasswordError, UserNotFoundError, LoginExi
 
 def get_password_input(prompt="Введите пароль: "):
     # Функция для скрытия ввода пароля
-    return getpass.getpas(prompt)
+    return getpass.getpass(prompt)
 
 
 def main():
