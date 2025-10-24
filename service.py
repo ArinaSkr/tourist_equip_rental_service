@@ -202,8 +202,6 @@ def main():
                                 if catalog.remove_item(target_item):
                                     actual_user.offers.remove(target_item)
                                     print('Объявление удалено')
-                                else:
-                                    print('Не удалось удалить объявление')
                             elif action_item.lower() == 'изменить':
                                 what_change = input('Какую информацию хотите изменить?(название, описание, цена, залог): ').lower()
                                 if what_change in ['название', 'описание', 'цена', 'залог']:

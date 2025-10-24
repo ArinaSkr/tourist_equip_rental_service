@@ -2,7 +2,7 @@ from .exceptions import WrongPasswordError, UserNotFoundError, LoginExistsError
 
 
 class User:
-    '''Класс для описание пользователя'''
+    '''Класс для описания пользователя'''
 
     def __init__(self, full_name, tel, login, password, id = 0):
         self.full_name = full_name
@@ -41,6 +41,9 @@ class User:
             self.tel = new_value
 
         self._update_user_in_file(old_login)
+
+        if field.lower() == 'логин':
+            self._update_login_in_equipment_file(old_login, new_value)
 
 
     def _update_user_in_file(self, search_login=None):
@@ -86,6 +89,28 @@ class User:
                 f.write(self.to_string() + '\n')
         except Exception as e:
             print(f"Ошибка сохранения пользователя: {e}")
+    
+    def _update_login_in_equipment_file(self, old_login, new_login):
+        # Обновление логина во всех связанных записях экипировки
+        try:
+            with open('equipment.txt', 'r', encoding='utf-8') as f:
+                lines = f.readlines()
+            
+            with open('equipment.txt', 'w', encoding='utf-8') as f:
+                for line in lines:
+                    data = line.strip().split('|')
+                    if len(data) >= 7: 
+                        if data[5] == old_login:
+                            data[5] = new_login
+                        if len(data) > 6 and data[6] == old_login:
+                            data[6] = new_login
+                        
+                        updated_line = '|'.join(data) + '\n'
+                        f.write(updated_line)
+                    else:
+                        f.write(line)
+        except Exception as e:
+            print(f"Ошибка обновления логина в файле экипировки: {e}")
 
     def __str__(self):
         return f'ФИО: {self.full_name}\nТелефон: {self.tel}\nЛогин: {self.login}\nПароль: {self.hide_password(self.password)}'
