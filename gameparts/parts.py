@@ -159,7 +159,7 @@ class Users:
         for user in self.users:
             if user.full_name == full_name and user.tel == tel:
                 return True
-            return False
+        return False
 
     def load_users(self):
         # Извлечение пользователей из файла
